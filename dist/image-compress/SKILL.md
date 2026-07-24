@@ -13,14 +13,67 @@ metadata:
 
 Compress images using the nx-mcp-server remote compression service.
 
+## Compression Workflow
+
+### Step 1: Collect Images
+
+Determine image source:
+- **Folder path** (e.g. `E:/images/`): use `ls` to list all `png/jpg/jpeg/webp/bmp/tga` files
+- **Single file path**: convert to dataUrl directly
+- **Remote URL**: pass as-is in `urls` parameter
+
+Report total count to user before proceeding.
+
+### Step 2: Convert Local Files to dataUrl
+
+Remote MCP cannot access local disk. Use this Python script for reliable base64 conversion (avoid shell command-line length limits on Windows):
+
+```python
+import sys, base64, os
+path = sys.argv[1]
+with open(path, 'rb') as f:
+    data = base64.b64encode(f.read()).decode()
+ext = os.path.splitext(path)[1].lower().lstrip('.')
+mime = 'jpeg' if ext == 'jpg' else ext
+print(f'data:image/{mime};base64,{data[:50]}...')  # preview only, pass full value to MCP
+```
+
+> Single file limit: **5MB**. Files over 5MB: tell user "File too large, compression not supported for files over 5MB".
+
+### Step 3: Compress
+
+**ALWAYS use MCP tool first.** Call `nx-mcp-compress` → `nx_compress`.
+
+Only if MCP tool is confirmed unavailable (not just returning errors), use the Python fallback script at `scripts/compress_fallback.py`.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `urls` | `string[]` | One of urls/files | — | HTTP URL or dataUrl |
+| `files` | `string[]` | One of urls/files | — | dataUrl format |
+| `quality` | `integer` | No | `90` | 1-100 |
+| `output` | `string` | No | — | `"overwrite"` or directory path |
+| `apiKey` | `string` | Yes | — | From `.mcp.json` env.NX_API_KEY |
+
+### Step 4: Summarize
+
+Display results as a table:
+
+| File | Original | Compressed | Ratio | CDN URL |
+|------|----------|------------|-------|---------|
+
+## Response Fields
+
+- `originalSize` — bytes before compression
+- `compressedSize` — bytes after compression
+- `ratio` — e.g. "87.4%"
+- `compressedUrl` — CDN URL of compressed image
+- `summary` — `{total, success, failed}`
+
 ## First-Time Setup
 
-The skill auto-detects MCP configuration on first run. If the `nx_compress` tool is unavailable:
+The skill auto-detects MCP configuration. If `nx_compress` tool is unavailable:
 
-### 1. Install MCP Server
-
-Create `.mcp.json` in your project directory:
-
+1. Create `.mcp.json` in project directory (NOT `settings.json`):
 ```json
 {
   "mcpServers": {
@@ -35,45 +88,19 @@ Create `.mcp.json` in your project directory:
 }
 ```
 
-Restart Claude Code after adding.
+2. Restart Claude Code after adding.
+3. **No API Key?** Contact WeChat `zhjian_2026` to get one.
 
-### 2. Configure API Key
+## Error Handling
 
-If MCP returns `MISSING_API_KEY` or `API_AUTH_FAILED`:
-- Check that `env.NX_API_KEY` is set in `.mcp.json`
-- **No API Key?** Contact WeChat `zhjian_2026` to get one
-- Restart Claude Code after updating
+| Error | Action |
+|-------|--------|
+| `MISSING_API_KEY` or `API_AUTH_FAILED` | Check `.mcp.json` env.NX_API_KEY |
+| `FILE_NOT_FOUND` | Skip file, mark "not found" in table |
+| `DOWNLOAD_FAILED` | Mark ❌, continue with others |
+| `REQUEST_TIMEOUT` | Retry once after 3 seconds |
 
-## Usage
+## Limits
 
-Say "compress these images" and the skill will:
-
-1. Collect images from a folder path or URL
-2. Convert local files to dataUrl (remote MCP cannot access local disk)
-3. Call the nx_compress MCP tool with dataUrl or HTTP URLs
-4. Summarize compression results in a table with size comparison and ratio
-
-## Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `urls` | `string[]` | Yes* | — | HTTP URLs or local paths |
-| `files` | `string[]` | Yes* | — | dataUrl format images |
-| `quality` | `integer` | No | `90` | 1-100, higher is better |
-| `output` | `string` | No | — | `"overwrite"` or directory path |
-
-## Response Fields
-
-- `originalSize` — original file size in bytes
-- `compressedSize` — compressed file size in bytes
-- `ratio` — compression ratio (e.g. "87.4%")
-- `compressedUrl` — CDN URL of compressed image
-- `summary` — aggregate stats (total, success, failed)
-
-## Size Limit
-
-Remote MCP limits single file to **5MB**. Files exceeding this are rejected.
-
-## Supported Formats
-
-png, jpg, jpeg, bmp, webp, tga
+- Single file max **5MB**
+- Supported formats: png, jpg, jpeg, bmp, webp, tga
