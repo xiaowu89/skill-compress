@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires nodejs and nx-mcp-server with NX_API_KEY configured
 metadata:
   author: xiaowu89
-  version: 1.0.0
+  version: 1.0.2
   tags: image-compress, compression, optimization, media
 ---
 
