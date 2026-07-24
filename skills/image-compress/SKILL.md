@@ -13,19 +13,35 @@ metadata:
 
 Compress images using the nx-mcp-server remote compression service.
 
+## ⚠️ Decision Flow (READ FIRST)
+
+```
+MCP tool available?
+  ├─ YES → Use it. Done.
+  └─ NO  → Check .mcp.json exists with nx-mcp-compress?
+              ├─ NO  → Guide user to create .mcp.json (see Setup below).
+              │         TELL USER TO RESTART Claude Code. STOP HERE.
+              │         Do NOT proceed to curl. Wait for user to restart.
+              └─ YES → User confirms they restarted but MCP still unavailable?
+                        ├─ NO  → Tell user to restart first. STOP.
+                        └─ YES → Use curl fallback (see bottom of this file).
+```
+
+**Never skip "restart" step. Never use curl before user confirms they restarted.**
+
 ## Compression Workflow
 
 ### Step 1: Collect Images
 
 - **Folder path**: use `ls` to list all `png/jpg/jpeg/webp/bmp/tga` files
 - **Single file path**: convert to dataUrl
-- **Remote URL**: pass as-is in `urls` parameter
+- **Remote URL**: pass as-is
 
-Report total count and file sizes to user. If any file exceeds 5MB, warn user: "File too large, compression not supported for files over 5MB."
+Report total count to user. Skip files > 5MB: "File too large."
 
-### Step 2: Compress — MCP First
+### Step 2: Compress (use MCP)
 
-**Always try MCP tool first.** Call `nx-mcp-compress` → `nx_compress`.
+Call `nx-mcp-compress` → `nx_compress`.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
@@ -36,18 +52,15 @@ Report total count and file sizes to user. If any file exceeds 5MB, warn user: "
 
 ### Step 3: Summarize
 
-Display results as a table:
-
 | File | Original | Compressed | Ratio | CDN URL |
 |------|----------|------------|-------|---------|
 
 ---
 
-## First-Time Setup (MCP unavailable)
+## Setup (.mcp.json)
 
-If `nx_compress` tool is not found, guide user through configuration:
+If MCP tool is unavailable and `.mcp.json` doesn't exist with `nx-mcp-compress`, create this file in the project directory:
 
-1. Ask user to create `.mcp.json` in project directory with this content:
 ```json
 {
   "mcpServers": {
@@ -62,91 +75,58 @@ If `nx_compress` tool is not found, guide user through configuration:
 }
 ```
 
-2. **Tell user to restart Claude Code** after adding the file.
-3. **No API Key?** Contact WeChat `zhjian_2026` to get one.
-4. After restart, retry MCP tool first. If still unavailable, use the curl fallback below.
+Then **tell the user: "Please restart Claude Code to load the MCP server, then try again."** Stop here. Do not attempt curl.
+
+**No API Key?** Contact WeChat `zhjian_2026`.
 
 ---
 
-## Curl Fallback (only after restart + MCP still unavailable)
+## Curl Fallback
 
-**Only use this when MCP is confirmed unavailable after restart.** Follow every step exactly — do not skip or reorder.
+**Only use this after ALL of the following are true:**
+1. .mcp.json exists with correct config
+2. User has restarted Claude Code
+3. MCP tool is still unavailable after restart
 
-### Convert local files (Python, not bash)
+### Convert local files to base64 (use Python, not bash)
 
-Bash has length limits on Windows for base64 data. Use Python:
-
-```bash
-python -c "
-import base64, sys
-with open('FILE_PATH', 'rb') as f:
-    b64 = base64.b64encode(f.read()).decode()
-print(b64)
-"
-```
-
-Then prepend `data:image/<mime>;base64,` to the output. MIME: `jpeg` for jpg, else use the file extension.
-
-### Call MCP via curl (3 steps, must follow order)
-
-API Key goes **inside arguments**, not in HTTP headers. Do all 3 steps with the same session:
+Bash has command-line length limits on Windows. Use Python:
 
 ```bash
-NX_KEY="从 .mcp.json 中 env.NX_API_KEY 读取"
-MCP_URL="https://mcp.api-inference.modelscope.net/da691d14ea0d46/mcp"
-FILES_JSON='["data:image/jpeg;base64,..."]'
-
-# Step 1: Initialize — extract SESSION_ID from response header
-SESSION=$(curl -s -i -X POST "$MCP_URL" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"claude-code","version":"1.0"}}}' \
-  | grep -i "mcp-session-id" | tr -d '\r' | awk -F': ' '{print $2}')
-
-# Step 2: Send initialized notification (REQUIRED — skip causes "Invalid request parameters")
-curl -s -X POST "$MCP_URL" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: $SESSION" \
-  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-
-# Step 3: Call nx_compress — apiKey goes in arguments, NOT headers
-curl -s -X POST "$MCP_URL" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: $SESSION" \
-  -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"nx_compress\",\"arguments\":{\"files\":$FILES_JSON,\"quality\":90,\"apiKey\":\"$NX_KEY\"}}}"
+python -c "import base64;b64=base64.b64encode(open('FILE_PATH','rb').read()).decode();print(b64)"
 ```
 
-**Rules:**
-- Never put API Key in HTTP headers (causes `MISSING_API_KEY`)
-- Never skip step 2 (causes `Invalid request parameters`)
-- Use Python for base64, not bash inline
-- All 3 steps share one session
-- `$NX_KEY` and `$FILES_JSON` must be single-quoted or properly escaped
+Prepend `data:image/<mime>;base64,` (mime: `jpeg` for jpg, else use extension).
+
+### MCP via curl — 3 steps, exact order, one session
+
+```bash
+NX_KEY="<from .mcp.json env.NX_API_KEY>"
+MCP="https://mcp.api-inference.modelscope.net/da691d14ea0d46/mcp"
+FILES='["data:image/jpeg;base64,..."]'
+
+# 1. Initialize, capture session ID
+SID=$(curl -s -i -X POST "$MCP" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"claude-code","version":"1.0"}}}' | grep -i "mcp-session-id" | tr -d '\r' | awk -F': ' '{print $2}')
+
+# 2. Send initialized (REQUIRED — skip = "Invalid request parameters")
+curl -s -X POST "$MCP" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "Mcp-Session-Id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+
+# 3. Compress — apiKey in arguments, NOT headers (headers = MISSING_API_KEY)
+curl -s -X POST "$MCP" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "Mcp-Session-Id: $SID" -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"nx_compress\",\"arguments\":{\"files\":$FILES,\"quality\":90,\"apiKey\":\"$NX_KEY\"}}}"
+```
 
 ---
 
 ## Response Fields
 
-- `originalSize` — bytes before compression
-- `compressedSize` — bytes after compression
-- `ratio` — compression ratio (e.g. "87.4%")
-- `compressedUrl` — CDN URL of compressed image
+- `originalSize` / `compressedSize` — bytes
+- `ratio` — e.g. "87.4%"
+- `compressedUrl` — CDN URL
 
-## Error Handling
+## Error Reference
 
-| Scenario | Action |
-|----------|--------|
-| MCP tool unavailable | Guide user to create .mcp.json → restart → retry |
-| MCP still unavailable after restart | Use curl fallback |
-| `MISSING_API_KEY` | Check `.mcp.json` env.NX_API_KEY |
-| `API_AUTH_FAILED` | Verify API Key is correct |
-| File > 5MB | Skip, tell user "too large" |
-| `FILE_NOT_FOUND` | Skip, mark "not found" |
-| `REQUEST_TIMEOUT` | Retry once after 3 seconds |
-
-## Limits
-
-- Single file max **5MB**
-- Supported formats: png, jpg, jpeg, bmp, webp, tga
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `MISSING_API_KEY` | apiKey in headers instead of arguments | Put apiKey inside `arguments` object |
+| `Invalid request parameters` | Skipped step 2 (initialized notification) | Run step 2 before step 3 |
+| MCP tool not found | .mcp.json missing or not restarted | Create config → restart → retry |
