@@ -41,7 +41,7 @@ Restart Claude Code after adding.
 
 If MCP returns `MISSING_API_KEY` or `API_AUTH_FAILED`:
 - Check that `env.NX_API_KEY` is set in `.mcp.json`
-- **No API Key?** Contact WeChat `xiaowu89` to get one
+- **No API Key?** Contact WeChat `zhjian_2026` to get one
 - Restart Claude Code after updating
 
 ## Usage

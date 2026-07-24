@@ -28,7 +28,7 @@ rm -rf /tmp/sc
 }
 ```
 
-> 没有 API Key？联系微信 xiaowu89 获取。
+> 没有 API Key？联系微信 zhjian_2026 获取。
 
 ## 使用
 

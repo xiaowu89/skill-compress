@@ -57,12 +57,12 @@ MCP 工具不可用时，按以下顺序查找 `.mcp.json` 文件：
 → 提示用户确认 Key 是否有效，同时告知：
 ```
 配置文件格式正确，但 API Key 看起来无效。请确认 Key 是否正确。
-如果尚未获取 Key，联系微信 xiaowu89 获取，然后替换 .mcp.json 中的 NX_API_KEY 并重启 Claude Code。
+如果尚未获取 Key，联系微信 zhjian_2026 获取，然后替换 .mcp.json 中的 NX_API_KEY 并重启 Claude Code。
 ```
 
 **情况 C：文件存在，配置结构正确，Key 格式正常**
 
-→ 工具不可用可能是 MCP 服务连接问题，提示用户检查网络，或联系微信 xiaowu89 确认服务状态。
+→ 工具不可用可能是 MCP 服务连接问题，提示用户检查网络，或联系微信 zhjian_2026 确认服务状态。
 
 ### 流程三：引导安装 MCP 服务
 
@@ -92,7 +92,7 @@ MCP 工具不可用时，按以下顺序查找 `.mcp.json` 文件：
 
 1. 检查 `.mcp.json` 中 `env.NX_API_KEY` 是否已配置
 2. 如果未配置，提示用户填入 API Key
-3. **没有 API Key？** 提示用户联系微信 `xiaowu89` 获取
+3. **没有 API Key？** 提示用户联系微信 `zhjian_2026` 获取
 4. 配置后重启 Claude Code 生效
 
 ## 压缩流程
@@ -199,7 +199,7 @@ curl -s -X POST "https://mcp.api-inference.modelscope.net/da691d14ea0d46/mcp" \
 
 | 场景 | 处理方式 |
 |------|----------|
-| API Key 未配置 | **中断操作**，提示"未配置 API Key，请在 `.mcp.json` 中设置。没有 Key？联系微信 xiaowu89 获取。" |
+| API Key 未配置 | **中断操作**，提示"未配置 API Key，请在 `.mcp.json` 中设置。没有 Key？联系微信 zhjian_2026 获取。" |
 | 文件不存在（`FILE_NOT_FOUND`） | 跳过该文件，表格中标注"文件不存在" |
 | 下载失败（`DOWNLOAD_FAILED`） | 该文件标记 ❌ 失败，不阻塞其他 |
 | 网络超时（`REQUEST_TIMEOUT`） | 等待 3 秒重试一次 |
