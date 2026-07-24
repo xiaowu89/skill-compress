@@ -1,17 +1,20 @@
 ---
 name: image-compress
-description: 自动化图片压缩工作流。支持本地路径、文件夹批量压缩，调用 NX MCP 服务端智能压缩，返回 CDN 地址及压缩比，支持覆盖原文件或另存。适用于图片压缩、减小文件体积、图片优化等场景。
+description: 自动化图片压缩工作流。支持本地路径、文件夹批量压缩，调用 NX MCP 服务端智能压缩，返回 CDN 地址及压缩比。适用于图片压缩、减小文件体积、图片优化等场景。
 license: MIT
-compatibility: Requires nodejs and nx-mcp-server with NX_API_KEY configured
+version: 1.0.0
 metadata:
   author: xiaowu89
-  version: 1.0.0
-  tags: image-compress, compression, optimization, media
+  tags:
+    - image-compress
+    - compression
+    - optimization
+    - mcp
 ---
 
 # 图片压缩
 
-调用 NX MCP 远程压缩服务对图片进行智能压缩。
+调用 NX MCP 服务对图片进行智能压缩，支持本地文件和远程 URL。
 
 ## 配置
 
@@ -37,7 +40,7 @@ metadata:
 
 ## 使用
 
-对图片说"压缩"即可：
+对图片说"压缩"即可，Skill 自动完成：
 
 1. 收集图片（本地路径、文件夹、远程 URL）
 2. 本地文件转为 dataUrl（远程 MCP 无法访问本地磁盘）
@@ -61,8 +64,16 @@ metadata:
 - compressedUrl — CDN 地址
 - summary — 汇总 `{total, success, failed}`
 
-## 限制与支持
+## 限制
 
 - 单文件上限 **5MB**
 - 支持格式：png、jpg、jpeg、bmp、webp、tga
-- 多张图片顺序处理，单张失败不影响其他
+
+## 错误处理
+
+| 场景 | 处理 |
+|------|------|
+| API Key 未配置 | 提示配置 `.mcp.json` |
+| 文件不存在 | 跳过，标注"文件不存在" |
+| 网络超时 | 等待 3 秒重试一次 |
+| API Key 无效 | 提示检查配置 |
