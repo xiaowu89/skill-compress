@@ -108,7 +108,7 @@ console.log('\n'+'='.repeat(100));
 console.log(`${'文件'.padEnd(40)} ${'原始'.padStart(8)} ${'压缩后'.padStart(8)} ${'压缩率'.padStart(8)} ${'结果'.padStart(6)}`);
 console.log('-'.repeat(100));
 for(const r of records){const oszS=(r.origKb/1024).toFixed(1)+'KB';
-if(r.compUrl){const cszS=(r.compKb).toFixed(1)+'KB';console.log(`${r.name.padEnd(40)} ${oszS.padStart(8)} ${cszS.padStart(8)} ${(r.ratio||'?').padStart(8)} ${'✅'.padStart(6)}`)}
+if(r.compUrl){const cszS=(r.compKb).toFixed(1)+'KB';console.log(`${r.name.padEnd(40)} ${oszS.padStart(8)} ${cszS.padStart(8)} ${(r.ratio||'?').padStart(8)} ${'✅'.padStart(6)} ${r.compUrl}`)}
 else{console.log(`${r.name.padEnd(40)} ${oszS.padStart(8)} ${'—'.padStart(8)} ${'—'.padStart(8)} ${'❌'.padStart(6)}`)}}
 console.log(`\n📊 ${records.length} 张 | ✅ ${pass} 成功 | ❌ ${fail} 失败 | 共节省 ${(totalSaved/1024).toFixed(0)}KB`);
 
