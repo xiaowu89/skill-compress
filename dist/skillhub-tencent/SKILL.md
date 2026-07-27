@@ -3,7 +3,7 @@ name: image-compress
 description: >-
   自动化图片压缩工作流。支持本地路径、文件夹批量压缩，调用 NX MCP 服务端智能压缩，
   返回 CDN 地址及压缩比，支持覆盖原文件或另存。
-version: "1.0.0"
+version: 1.1.0
 category: 图片处理
 platforms:
   - claude-code
@@ -20,196 +20,166 @@ dependency:
   - nx-mcp-server MCP 服务
 ---
 
-# 图片压缩专家
+# 图片压缩
 
-你是图片压缩专家，负责调用远程压缩服务对图片进行智能无损压缩。
+通过 nx-mcp-server 远程压缩服务对图片进行智能压缩。
 
-## 首次使用：自动检测并引导配置
+## 配置
 
-Skill 激活后会**先尝试调用** `nx_compress` 工具。如果 MCP 服务未配置，按以下流程引导用户完成配置：
-
-### 流程一：检测 MCP 工具
-
-1. 尝试调用 `nx-mcp-compress` 的 `nx_compress` 工具
-2. 如果工具**可用** → 进入「流程三」检查 API Key 可用性
-3. 如果工具**不可用** → 进入「流程二」诊断具体原因
-
-### 流程二：诊断 MCP 不可用原因
-
-MCP 工具不可用时，按以下顺序查找 `.mcp.json` 文件：
-
-1. **当前工作目录** `.mcp.json`
-2. **用户家目录** `%USERPROFILE%\.mcp.json`
-
-读取找到的第一个文件内容进行诊断：
-
-**情况 A：文件不存在或未包含 `nx-mcp-compress`**
-
-→ 引导用户创建/追加配置（见下方「流程三」的配置模板）。
-
-**情况 B：文件存在，配置结构正确，但 `NX_API_KEY` 看起来是占位符**
-
-判断标准：key 为以下任意一种即为占位符——
-- 包含中文（如 `你的API Key`）
-- 等于默认占位符 `your-api-key-here`
-- 内容过短（< 10 字符）或不规则杂凑（如 `sd-dasdjnhdjashda`）
-
-→ 提示用户确认 Key 是否有效，同时告知：
-```
-配置文件格式正确，但 API Key 看起来无效。请确认 Key 是否正确。
-如果尚未获取 Key，请替换 .mcp.json 中的 NX_API_KEY 并重启 Claude Code。
-```
-
-**情况 C：文件存在，配置结构正确，Key 格式正常**
-
-→ 工具不可用可能是 MCP 服务连接问题，提示用户检查网络或确认服务状态。
-
-### 流程三：引导安装 MCP 服务
-
-提示用户将以下内容添加到当前项目目录下的 `.mcp.json` 文件 中（如果已有 `mcpServers`，在对象内追加 `nx-mcp-compress` 字段）：
+在项目根目录创建 `.mcp.json`：
 
 ```json
 {
   "mcpServers": {
     "nx-mcp-compress": {
-      "type": "streamable_http",
-      "url": "https://mcp.api-inference.modelscope.net/da691d14ea0d46/mcp",
+      "type": "url",
+      "url": "https://mcp.api-inference.modelscope.net/4378d43d3e7d4c/mcp",
       "env": {
-        "NX_API_KEY": "你的API Key"
+        "NX_API_KEY": "你的 API Key"
       }
     }
   }
 }
 ```
 
-> `settings.json` 不支持 `mcpServers` 顶层字段，MCP 服务必须通过 `.mcp.json` 配置。
+查找顺序：项目根目录 → 用户家目录。提取 `url` → `MCP_URL`，`env.NX_API_KEY` → `API_KEY`。
 
-添加后提示用户**重启 Claude Code** 以加载新 MCP 连接。
+Skill 直连 MCP 端点，**无需重启 Claude Code**。
 
-### 流程四：引导配置 API Key
-
-如果 MCP 工具已加载但调用时返回 `MISSING_API_KEY` 或 `API_AUTH_FAILED`：
-
-1. 检查 `.mcp.json` 中 `env.NX_API_KEY` 是否已配置
-2. 如果未配置，提示用户填入 API Key
-3. **没有 API Key？** 提示用户获取 API Key 后再试
-4. 配置后重启 Claude Code 生效
+> **没有 API Key？** 联系微信 `zhjian_2026` 获取。
 
 ## 压缩流程
 
-当用户要求压缩图片时，严格按以下步骤执行：
-
-### 步骤一：收集图片
-
-确定图片来源——
-- **文件夹路径**（如 `E:/images/`）：用 `ls` 列出所有 `png/jpg/jpeg/webp/bmp/tga` 文件
-- **单张图片路径**：直接转为 dataUrl
-- **网络 URL**：直接传入 HTTP 链接
-
-收集完成后，先向用户汇报：共 X 张图片。
-
-> ⚠️ **Remote 模式限制**：远程 MCP 只能接收 HTTP URL 或 dataUrl，无法访问本地磁盘路径。本地文件需先转为 dataUrl 再通过 `files` 参数传入。
-
-### 步骤二：转换本地文件为 dataUrl
-
-本地图片路径（如 `E:/photo.png`）需先转为 dataUrl。用 Node.js 内置模块即可（无需额外依赖）：
+### 步骤 1：检查配置
 
 ```bash
-node -e "
-const fs=require('fs');
-const path='图片路径';
-const raw=fs.readFileSync(path);
-const b64=raw.toString('base64');
-const ext=path.split('.').pop().toLowerCase();
-const mime=ext==='jpg'?'jpeg':ext;
-console.log('data:image/'+mime+';base64,'+b64);
-"
+cat .mcp.json 2>/dev/null || cat ~/.mcp.json 2>/dev/null
 ```
 
-> ⚠️ 远程 MCP 当前限制单张图片 **5MB**，超过 5MB 的图片直接提示用户"文件过大，暂不支持超过 5MB 的图片压缩"，不要尝试调用 MCP。
+- 找到 → 记录 `url` 和 `NX_API_KEY`，继续步骤 2
+- 找不到 → 询问用户是否已有 API Key：
+  - **有 Key**：帮用户创建 `~/.mcp.json`，全局和项目安装都通用
+  - **没有 Key**：告知联系微信 `zhjian_2026` 获取
 
-**已上传 CDN 的远程 URL**直接传入 `urls` 参数，无需转换。
+> ⚠️ 配置缺失时不要继续后续步骤。
 
-### 步骤三：调用压缩服务
+### 步骤 2：执行压缩（一次 Bash 调用，纯内存，零文件）
 
-优先使用 MCP 工具，不可用时降级为 curl 直接调用。
-
-#### 方式 A：MCP 工具（优先）
-
-调用 `nx-mcp-compress` 的 `nx_compress` 工具。
-
-#### 方式 B：curl 直接调用（MCP 不可用时降级）
-
-MCP 工具未加载时，改用 curl 直接调 MCP 服务 API，效果完全一致：
+替换 `PIC_DIR`、`MCP_URL`、`API_KEY`、`QUALITY` 后，heredoc 直接通过 stdin 喂给 node：
 
 ```bash
-# 1. 获取 session
-SESSION=$(curl -s -D - "https://mcp.api-inference.modelscope.net/da691d14ea0d46/mcp" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"claude-code","version":"1.0"}}}' 2>&1 | grep -i "mcp-session-id" | tr -d '\r' | awk -F': ' '{print $2}')
+NODE_PATH=$(npm root -g) node << 'COMPRESSEOF'
+const fs=require('fs'),path=require('path');
+let PIC_DIR='<目标图片目录绝对路径>';
+const SINGLE_FILE='<单张图片路径，为空则压缩整个目录>';
+const MCP_URL='<从.mcp.json读取的url>';
+const API_KEY='<从.mcp.json读取的NX_API_KEY>';
+const QUALITY=90;
+(async()=>{
+const exts=['.png','.jpg','.jpeg','.webp','.bmp','.tga'];
+let imgs;
+if(SINGLE_FILE){imgs=[path.basename(SINGLE_FILE)];PIC_DIR=path.dirname(SINGLE_FILE)}
+else{imgs=fs.readdirSync(PIC_DIR).filter(f=>exts.includes(path.extname(f).toLowerCase())).sort()}
+const origTotal=imgs.reduce((s,f)=>s+fs.statSync(path.join(PIC_DIR,f)).size,0);
+console.log(`共 ${imgs.length} 张，总 ${(origTotal/1024).toFixed(0)}KB`);
+const maxSize=5*1024*1024;
+const records=[];let skip=0;
+for(let i=0;i<imgs.length;i++){const f=imgs[i],fp=path.join(PIC_DIR,f),osz=fs.statSync(fp).size;
+if(osz>maxSize){records.push({name:f,origKb:osz,compKb:0,compUrl:null,ratio:null,error:'超过5MB限制'});skip++;console.log(`  [${i+1}/${imgs.length}] ${f} ${(osz/1024).toFixed(0)}KB ⚠️ 超过5MB跳过`);continue}
+const buf=fs.readFileSync(fp);const ext=path.extname(f).toLowerCase().slice(1);
+const mime=ext==='png'?'image/png':ext==='webp'?'image/webp':'image/jpeg';
+records.push({name:f,origKb:osz,compKb:0,compUrl:null,ratio:null,dataUrl:'data:'+mime+';base64,'+buf.toString('base64')});}
+console.log(`可压缩: ${records.length-skip} 张, 跳过: ${skip} 张`);
+console.time('压缩');
+const H={'Content-Type':'application/json','Accept':'application/json, text/event-stream'};
+const r1=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'1',method:'initialize',params:{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'cc',version:'1'}}})});
+H['Mcp-Session-Id']=r1.headers.get('Mcp-Session-Id');console.log('MCP: init');
+await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})});console.log('MCP: notified');
+// 并发池：始终保持 LIMIT 个请求在飞，完成一个补一个
+	const LIMIT=5;
+	let totalSaved=0,pass=0,fail=0,done=0;
+	const pending=records.filter(r=>!r.error);
+	
+	async function compressOne(r,idx){
+	  try{
+	    const r3=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})});
+	    const raw=await r3.json();
+	    if(!raw.result){r.error='MCP: '+(raw.error?.message||'unknown');fail++}
+	    else{
+	      const inner=JSON.parse(raw.result.content[0].text);
+	      if(inner.error){r.error=inner.code+': '+inner.error;fail++}
+	      else{const it=inner.items[0];
+	        if(it.error){r.error=it.error;fail++}
+	        else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${idx+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
+	      }
+	    }
+	  }catch(e){r.error=e.message;fail++}
+	  done++;
+	}
+	
+	// 滑动窗口：始终保持 LIMIT 个并发
+	let i=0;
+	const running=new Set();
+	while(i<pending.length||running.size>0){
+	  while(running.size<LIMIT&&i<pending.length){
+	    const p=compressOne(pending[i],i).then(()=>running.delete(p));
+	    running.add(p);i++;
+	  }
+	  if(running.size>0) await Promise.race(running);
+	}console.timeEnd('压缩');
+console.log('\n'+'='.repeat(100));
+console.log(`${'文件'.padEnd(40)} ${'原始'.padStart(8)} ${'压缩后'.padStart(8)} ${'压缩率'.padStart(8)} ${'结果'.padStart(6)}`);
+console.log('-'.repeat(100));
+for(const r of records){const oszS=(r.origKb/1024).toFixed(1)+'KB';
+if(r.compUrl){const cszS=(r.compKb).toFixed(1)+'KB';console.log(`${r.name.padEnd(40)} ${oszS.padStart(8)} ${cszS.padStart(8)} ${(r.ratio||'?').padStart(8)} ${'✅'.padStart(6)} ${r.compUrl}`)}
+else{console.log(`${r.name.padEnd(40)} ${oszS.padStart(8)} ${'—'.padStart(8)} ${'—'.padStart(8)} ${'❌'.padStart(6)}`)}}
+console.log(`\n📊 ${records.length} 张 | ✅ ${pass} 成功 | ❌ ${fail} 失败 | 共节省 ${(totalSaved/1024).toFixed(0)}KB`);
 
-# 2. 发送 initialized
-curl -s -o /dev/null -X POST "https://mcp.api-inference.modelscope.net/da691d14ea0d46/mcp" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: $SESSION" \
-  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-
-# 3. 调用压缩（dataUrl 方式）
-curl -s -X POST "https://mcp.api-inference.modelscope.net/da691d14ea0d46/mcp" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: $SESSION" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"nx_compress","arguments":{"files":["data:image/jpeg;base64,..."],"quality":90,"apiKey":"sk-xxx"}}}'
+})();
+COMPRESSEOF
 ```
 
-> 每张图片一个 session，批量压缩共用 session 即可。
+压缩参数：`quality` 默认 90（1-100），无需本地 sharp，直传服务端压缩。
 
-**参数规则（两种方式一致）：**
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `urls` | `string[]` | 与 files 二选一 | — | HTTP URL / dataUrl |
-| `files` | `string[]` | 与 urls 二选一 | — | dataUrl 格式 |
-| `quality` | `integer` | 否 | `90` | 压缩质量 1~100 |
-| `output` | `string` | 否 | — | `"overwrite"` 覆盖原文件 / 目录路径另存 |
-| `apiKey` | `string` | **是** | — | 从 `.mcp.json` 中 `env.NX_API_KEY` 读取 |
+### 步骤 3：下载到本地（如用户需要）
 
-> curl 方式需**显式传 apiKey**，从 `.mcp.json` 的 `env.NX_API_KEY` 中获取。
+不要重新运行压缩！压缩结果中的 CDN URL 已在控制台输出，直接用 curl 下载：
 
-### 步骤四：汇总结果
+```bash
+curl -o <输出目录>/<文件名> "<CDN地址>"
+```
 
-以表格形式展示压缩结果：
+- ✅ **成功**：压缩后的 CDN URL 可直接使用
+- ⚠️ **超 5MB**：文件超过服务端限制，需手动处理
+- ❌ **失败**：重试一次
 
-| 文件 | 原大小 | 压缩后 | 压缩比 | CDN 地址 |
-|------|--------|--------|--------|----------|
-| photo.png | 3.0MB | 388KB | 87.4% | `https://qiniucdn.nxtici.cn/...` |
+---
 
-**返回结果字段说明：**
+## 返回字段速查
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `originalSize` | `number` | 原始文件大小（字节） |
-| `compressedSize` | `number` | 压缩后文件大小（字节） |
-| `ratio` | `string` | 压缩比（如 "87.4%"） |
-| `compressedUrl` | `string` | 压缩后 CDN 地址 |
-| `outputPath` | `string` | 本地输出路径（仅指定 output 时返回） |
-| `summary` | `object` | 汇总统计 `{total, success, failed}` |
+| `originalSize` | `number` | 原始大小（bytes） |
+| `compressedSize` | `number` | 压缩后大小（bytes） |
+| `ratio` | `string` | 压缩率，如 `"71.5%"` |
+| `compressedUrl` | `string` | CDN 地址 |
 
-## 错误处理
+## 常见错误速查
 
-| 场景 | 处理方式 |
-|------|----------|
-| API Key 未配置 | **中断操作**，提示"未配置 API Key，请在 `.mcp.json` 中设置，获取 API Key 后再试。" |
-| 文件不存在（`FILE_NOT_FOUND`） | 跳过该文件，表格中标注"文件不存在" |
-| 下载失败（`DOWNLOAD_FAILED`） | 该文件标记 ❌ 失败，不阻塞其他 |
-| 网络超时（`REQUEST_TIMEOUT`） | 等待 3 秒重试一次 |
-| API Key 无效（`API_AUTH_FAILED`） | 提示用户检查 API Key 配置 |
-| 缺少参数（`MISSING_PARAMS`） | 提示需要提供图片路径或 URL |
+| 错误现象 | 原因 | 正确做法 |
+|------|------|------|
+| `MISSING_API_KEY` | 没传 `apiKey` | 必须传 |
+| `API_AUTH_FAILED` | API Key 无效 | 检查 `.mcp.json` 中的 Key |
+| `-32602 Invalid request parameters` | 未发送 `notifications/initialized` | 必须三步：init → notified → call |
+| `406 Not Acceptable` | 缺少 `Accept` 头 | 同时声明 `application/json` 和 `text/event-stream` |
+| 文件超过 5MB 被跳过 | 服务端限制 | 提示用户手动处理 |
 
-## 注意事项
+## 禁止事项
 
-- Stdio 模式无文件大小限制，直接传本地路径即可
-- 不支持的文件格式会自动跳过
-- 多张图片顺序处理，单张失败不影响其他
-- 压缩超时 180 秒，大图请耐心等待
-- 支持格式：png、jpg、jpeg、bmp、webp、tga
+- ❌ 不要本地压缩（服务端智能压缩，本地 sharp 多余）
+- ❌ 不要传 `output` 参数（不存在）
+- ❌ 不要省略 `apiKey` 参数
+- ❌ 不要省略 `notifications/initialized` 步骤
+- ❌ 不要写任何临时文件（heredoc 直接 stdin，纯内存执行）
+- ❌ 不要把流程拆成多次 Bash 调用（一次 `node << 'COMPRESSEOF'` 搞定）
+- ❌ 不要使用反斜杠路径，一律用正斜杠（`d:/path`）
