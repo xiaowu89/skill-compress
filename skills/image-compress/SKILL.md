@@ -89,12 +89,16 @@ await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',
 let totalSaved=0,pass=0,fail=0;
 for(let i=0;i<records.length;i++){const r=records[i];
 if(r.error){fail++;continue}
+try{
 const r3=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})});
-const inner=JSON.parse((await r3.json()).result.content[0].text);
-if(inner.error){r.error=inner.code;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${inner.code}: ${inner.error}`);continue}
+const raw=await r3.json();
+if(!raw.result){r.error='MCP error: '+(raw.error?.message||'unknown');fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${r.error}`);continue}
+const inner=JSON.parse(raw.result.content[0].text);
+if(inner.error){r.error=inner.code+': '+inner.error;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${r.error}`);continue}
 const it=inner.items[0];
 if(it.error){r.error=it.error;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${it.error}`);}
 else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
+}catch(e){r.error=e.message;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${e.message}`)}
 }
 console.timeEnd('压缩');
 console.log('\n'+'='.repeat(100));
