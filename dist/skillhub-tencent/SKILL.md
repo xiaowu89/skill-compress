@@ -46,7 +46,7 @@ dependency:
 
 Skill 直连 MCP 端点，**无需重启 Claude Code**。
 
-> **没有 API Key？** 联系微信 `zhjian_2026` 获取。
+> **没有 API Key？** 联系服务提供商获取。
 
 ## 压缩流程
 
@@ -59,7 +59,7 @@ cat .mcp.json 2>/dev/null || cat ~/.mcp.json 2>/dev/null
 - 找到 → 记录 `url` 和 `NX_API_KEY`，继续步骤 2
 - 找不到 → 询问用户是否已有 API Key：
   - **有 Key**：帮用户创建 `~/.mcp.json`，全局和项目安装都通用
-  - **没有 Key**：告知联系微信 `zhjian_2026` 获取
+  - **没有 Key**：告知联系服务提供商获取
 
 > ⚠️ 配置缺失时不要继续后续步骤。
 
