@@ -88,44 +88,29 @@ const H={'Content-Type':'application/json','Accept':'application/json, text/even
 const r1=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'1',method:'initialize',params:{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'cc',version:'1'}}})});
 H['Mcp-Session-Id']=r1.headers.get('Mcp-Session-Id');console.log('MCP: init');
 await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})});console.log('MCP: notified');
-	// 每 5 张一批并发发送
-	const BATCH=5;
+	// 每批最多 5 张，并发发送（每张一个请求，同时发出）
+	const CONCURRENCY=5;
 	let totalSaved=0,pass=0,fail=0;
 	const pending=records.filter(r=>!r.error);
-	for(let b=0;b<pending.length;b+=BATCH){
-	  const batch=pending.slice(b,b+BATCH);
-	  try{
-	    const r3=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:batch.map(r=>r.dataUrl),quality:QUALITY,apiKey:API_KEY}}})});
-	    const raw=await r3.json();
-	    if(!raw.result){batch.forEach(r=>{r.error='MCP error: '+(raw.error?.message||'unknown');fail++;console.log(`  ✗ ${r.name} ❌ ${r.error}`)});continue}
-	    const inner=JSON.parse(raw.result.content[0].text);
-	    if(inner.error){batch.forEach(r=>{r.error=inner.code+': '+inner.error;fail++;console.log(`  ✗ ${r.name} ❌ ${r.error}`)});continue}
-	    inner.items.forEach((it,i)=>{const r=batch[i],idx=records.indexOf(r);
-	      if(it.error){r.error=it.error;fail++;console.log(`  [${idx+1}/${imgs.length}] ${r.name} ❌ ${it.error}`)}
-	      else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${idx+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
-	    });
-	  }catch(e){
-	    const msg=e.message||'';
-	    if(msg.includes('Too Large')&&batch.length>1){
-	      // payload 超限，拆半逐个重试
-	      console.log(`  批次过大，拆分重试...`);
-	      for(const r of batch){
-	        try{
-	          const sr=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})});
-	          const sraw=await sr.json();
-	          if(!sraw.result){r.error='MCP error: '+(sraw.error?.message||'unknown');fail++;continue}
-	          const sinner=JSON.parse(sraw.result.content[0].text);
-	          if(sinner.error){r.error=sinner.code+': '+sinner.error;fail++}
-	          else{const it=sinner.items[0];
-	            if(it.error){r.error=it.error;fail++}
-	            else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${records.indexOf(r)+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
-	          }
-	        }catch(e2){r.error=e2.message;fail++}
+	for(let b=0;b<pending.length;b+=CONCURRENCY){
+	  const batch=pending.slice(b,b+CONCURRENCY);
+	  const results=await Promise.allSettled(batch.map(r=>
+	    fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})})
+	  ));
+	  for(let i=0;i<batch.length;i++){const r=batch[i],sr=results[i];
+	    if(sr.status!=='fulfilled'){r.error=sr.reason?.message||'fetch failed';fail++;continue}
+	    try{
+	      const raw=await sr.value.json();
+	      if(!raw.result){r.error='MCP: '+(raw.error?.message||'unknown');fail++;continue}
+	      const inner=JSON.parse(raw.result.content[0].text);
+	      if(inner.error){r.error=inner.code+': '+inner.error;fail++}
+	      else{const it=inner.items[0];
+	        if(it.error){r.error=it.error;fail++}
+	        else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${records.indexOf(r)+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
 	      }
-	    }else{batch.forEach(r=>{r.error=e.message;fail++;console.log(`  ✗ ${r.name} ❌ ${e.message}`)})}
+	    }catch(e){r.error=e.message;fail++}
 	  }
-	}
-console.timeEnd('压缩');
+	}console.timeEnd('压缩');
 console.log('\n'+'='.repeat(100));
 console.log(`${'文件'.padEnd(40)} ${'原始'.padStart(8)} ${'压缩后'.padStart(8)} ${'压缩率'.padStart(8)} ${'结果'.padStart(6)}`);
 console.log('-'.repeat(100));
