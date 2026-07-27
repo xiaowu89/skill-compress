@@ -104,6 +104,11 @@ for(const r of records){const oszS=(r.origKb/1024).toFixed(1)+'KB';
 if(r.compUrl){const cszS=(r.compKb).toFixed(1)+'KB';console.log(`${r.name.padEnd(40)} ${oszS.padStart(8)} ${cszS.padStart(8)} ${(r.ratio||'?').padStart(8)} ${'✅'.padStart(6)}`)}
 else{console.log(`${r.name.padEnd(40)} ${oszS.padStart(8)} ${'—'.padStart(8)} ${'—'.padStart(8)} ${'❌'.padStart(6)}`)}}
 console.log(`\n📊 ${records.length} 张 | ✅ ${pass} 成功 | ❌ ${fail} 失败 | 共节省 ${(totalSaved/1024).toFixed(0)}KB`);
+	// 保存 CDN URL 供后续下载（避免重复压缩）
+	const output=records.filter(r=>r.compUrl).map(r=>({name:r.name,url:r.compUrl,size:r.compKb}));
+	fs.writeFileSync("/tmp/compress_result.json",JSON.stringify(output,null,2));
+	console.log("
+CDN URL 已保存，可直接下载：cat /tmp/compress_result.json");
 })();
 COMPRESSEOF
 ```
