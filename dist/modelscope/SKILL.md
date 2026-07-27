@@ -9,7 +9,7 @@ metadata:
     - image-compress
     - compression
     - optimization
-    - mcp
+    - cdn
 ---
 
 # 图片压缩
