@@ -88,22 +88,38 @@ const H={'Content-Type':'application/json','Accept':'application/json, text/even
 const r1=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'1',method:'initialize',params:{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'cc',version:'1'}}})});
 H['Mcp-Session-Id']=r1.headers.get('Mcp-Session-Id');console.log('MCP: init');
 await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})});console.log('MCP: notified');
-// 逐张发送，避免单次 payload 超过网关限制（~5MB）
-let totalSaved=0,pass=0,fail=0;
-for(let i=0;i<records.length;i++){const r=records[i];
-if(r.error){fail++;continue}
-try{
-const r3=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})});
-const raw=await r3.json();
-if(!raw.result){r.error='MCP error: '+(raw.error?.message||'unknown');fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${r.error}`);continue}
-const inner=JSON.parse(raw.result.content[0].text);
-if(inner.error){r.error=inner.code+': '+inner.error;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${r.error}`);continue}
-const it=inner.items[0];
-if(it.error){r.error=it.error;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${it.error}`);}
-else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
-}catch(e){r.error=e.message;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${e.message}`)}
-}
-console.timeEnd('压缩');
+// 并发池：始终保持 LIMIT 个请求在飞，完成一个补一个
+	const LIMIT=5;
+	let totalSaved=0,pass=0,fail=0,done=0;
+	const pending=records.filter(r=>!r.error);
+	
+	async function compressOne(r,idx){
+	  try{
+	    const r3=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})});
+	    const raw=await r3.json();
+	    if(!raw.result){r.error='MCP: '+(raw.error?.message||'unknown');fail++}
+	    else{
+	      const inner=JSON.parse(raw.result.content[0].text);
+	      if(inner.error){r.error=inner.code+': '+inner.error;fail++}
+	      else{const it=inner.items[0];
+	        if(it.error){r.error=it.error;fail++}
+	        else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${idx+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
+	      }
+	    }
+	  }catch(e){r.error=e.message;fail++}
+	  done++;
+	}
+	
+	// 滑动窗口：始终保持 LIMIT 个并发
+	let i=0;
+	const running=new Set();
+	while(i<pending.length||running.size>0){
+	  while(running.size<LIMIT&&i<pending.length){
+	    const p=compressOne(pending[i],i).then(()=>running.delete(p));
+	    running.add(p);i++;
+	  }
+	  if(running.size>0) await Promise.race(running);
+	}console.timeEnd('压缩');
 console.log('\n'+'='.repeat(100));
 console.log(`${'文件'.padEnd(40)} ${'原始'.padStart(8)} ${'压缩后'.padStart(8)} ${'压缩率'.padStart(8)} ${'结果'.padStart(6)}`);
 console.log('-'.repeat(100));
