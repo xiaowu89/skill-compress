@@ -64,12 +64,15 @@ cat .mcp.json 2>/dev/null || cat ~/.mcp.json 2>/dev/null
 NODE_PATH=$(npm root -g) node << 'COMPRESSEOF'
 const fs=require('fs'),path=require('path');
 const PIC_DIR='<目标图片目录绝对路径>';
+const SINGLE_FILE='<单张图片路径，为空则压缩整个目录>';
 const MCP_URL='<从.mcp.json读取的url>';
 const API_KEY='<从.mcp.json读取的NX_API_KEY>';
 const QUALITY=90;
 (async()=>{
 const exts=['.png','.jpg','.jpeg','.webp','.bmp','.tga'];
-const imgs=fs.readdirSync(PIC_DIR).filter(f=>exts.includes(path.extname(f).toLowerCase())).sort();
+let imgs;
+if(SINGLE_FILE){imgs=[path.basename(SINGLE_FILE)];PIC_DIR=path.dirname(SINGLE_FILE)}
+else{imgs=fs.readdirSync(PIC_DIR).filter(f=>exts.includes(path.extname(f).toLowerCase())).sort()}
 const origTotal=imgs.reduce((s,f)=>s+fs.statSync(path.join(PIC_DIR,f)).size,0);
 console.log(`共 ${imgs.length} 张，总 ${(origTotal/1024).toFixed(0)}KB`);
 const maxSize=5*1024*1024;
