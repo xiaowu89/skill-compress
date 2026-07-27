@@ -95,12 +95,12 @@ await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',
 	for(let b=0;b<pending.length;b+=CONCURRENCY){
 	  const batch=pending.slice(b,b+CONCURRENCY);
 	  const results=await Promise.allSettled(batch.map(r=>
-	    fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})})
+	    fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})}).then(res=>res.json())
 	  ));
 	  for(let i=0;i<batch.length;i++){const r=batch[i],sr=results[i];
 	    if(sr.status!=='fulfilled'){r.error=sr.reason?.message||'fetch failed';fail++;continue}
 	    try{
-	      const raw=await sr.value.json();
+	      const raw=sr.value;
 	      if(!raw.result){r.error='MCP: '+(raw.error?.message||'unknown');fail++;continue}
 	      const inner=JSON.parse(raw.result.content[0].text);
 	      if(inner.error){r.error=inner.code+': '+inner.error;fail++}
