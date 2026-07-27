@@ -1,6 +1,6 @@
 ---
 name: image-compress
-description: 自动化图片内容审核工作流。支持支持本地路径、文件夹批量压缩，调用 NX MCP 服务端智能压缩，返回 CDN 地址及压缩比。适用于图片压缩、减小文件体积、图片优化等场景。
+description: 自动化图片压缩工作流。支持本地路径、文件夹批量压缩，调用 NX MCP 服务端智能压缩，返回 CDN 地址及压缩比。适用于图片压缩、减小文件体积、图片优化等场景。
 license: MIT
 version: 1.1.0
 metadata:
@@ -12,9 +12,9 @@ metadata:
     - cdn
 ---
 
-# 图片内容审核
+# 图片压缩
 
-调用 NX MCP 审核服务对图片进行鉴黄、政治、暴恐识别，支持批量处理。
+通过 nx-mcp-server 远程压缩服务对图片进行智能压缩。
 
 ## 配置
 
@@ -23,9 +23,9 @@ metadata:
 ```json
 {
   "mcpServers": {
-    "nx-mcp-audit": {
+    "nx-mcp-compress": {
       "type": "url",
-      "url": "https://mcp.api-inference.modelscope.net/da16b3f65bdb4e/mcp",
+      "url": "https://mcp.api-inference.modelscope.net/4378d43d3e7d4c/mcp",
       "env": {
         "NX_API_KEY": "你的 API Key"
       }
@@ -40,7 +40,7 @@ Skill 直连 MCP 端点，**无需重启 Claude Code**。
 
 > **No API Key?** Contact WeChat `zhjian_2026` to get one.
 
-## 审核流程
+## 压缩流程
 
 ### 步骤 1：检查配置（缺少则立即停止）
 
@@ -50,61 +50,91 @@ cat .mcp.json 2>/dev/null || cat ~/.mcp.json 2>/dev/null
 
 - 找到 → 记录 `url` 和 `NX_API_KEY`，继续步骤 2
 - 找不到 → 询问用户是否已有 API Key：
-  - **有 Key**：帮用户创建 `~/.mcp.json`（用户家目录），全局和项目安装都通用
-  - **没有 Key**：告知联系微信 `zhjian_2026` 获取，等用户拿到后回来配置
+  - **有 Key**：帮用户创建 `~/.mcp.json`，全局和项目安装都通用
+  - **没有 Key**：告知联系微信 `zhjian_2026` 获取
 
-> ⚠️ 配置缺失时不要安装 sharp 或继续后续步骤，先解决配置再往下走。
+> ⚠️ 配置缺失时不要继续后续步骤。
 
-### 步骤 2：安装 sharp + 执行审核（一次 Bash 调用，纯内存，零文件）
+### 步骤 2：执行压缩（一次 Bash 调用，纯内存，零文件）
 
-替换 `PIC_DIR`、`MCP_URL`、`API_KEY` 后，heredoc 直接通过 stdin 喂给 node，**不写任何文件**：
+替换 `PIC_DIR`、`MCP_URL`、`API_KEY`、`QUALITY` 后，heredoc 直接通过 stdin 喂给 node：
 
 ```bash
-NODE_PATH=$(npm root -g) node << 'AUDITEOF'
-const{execSync}=require('child_process');
-let s;try{s=require('sharp')}catch(e){console.log('安装sharp...');execSync('npm install -g sharp',{stdio:'inherit'});s=require('sharp')}
-const fs=require('fs'),path=require('path'),sharp=s;
-const PIC_DIR='<目标图片目录绝对路径>';
+NODE_PATH=$(npm root -g) node << 'COMPRESSEOF'
+const fs=require('fs'),path=require('path');
+let PIC_DIR='<目标图片目录绝对路径>';
+const SINGLE_FILE='<单张图片路径，为空则压缩整个目录>';
 const MCP_URL='<从.mcp.json读取的url>';
 const API_KEY='<从.mcp.json读取的NX_API_KEY>';
+const QUALITY=90;
 (async()=>{
 const exts=['.png','.jpg','.jpeg','.webp','.bmp','.tga'];
-const imgs=fs.readdirSync(PIC_DIR).filter(f=>exts.includes(path.extname(f).toLowerCase())).sort();
+let imgs;
+if(SINGLE_FILE){imgs=[path.basename(SINGLE_FILE)];PIC_DIR=path.dirname(SINGLE_FILE)}
+else{imgs=fs.readdirSync(PIC_DIR).filter(f=>exts.includes(path.extname(f).toLowerCase())).sort()}
 const origTotal=imgs.reduce((s,f)=>s+fs.statSync(path.join(PIC_DIR,f)).size,0);
 console.log(`共 ${imgs.length} 张，总 ${(origTotal/1024).toFixed(0)}KB`);
-const records=[],data_urls=[];let compTotal=0;console.time('压缩');
+const maxSize=5*1024*1024;
+const records=[];let skip=0;
 for(let i=0;i<imgs.length;i++){const f=imgs[i],fp=path.join(PIC_DIR,f),osz=fs.statSync(fp).size;
-try{const buf=await sharp(fp,{limitInputPixels:false}).resize({width:500,height:500,fit:'inside',withoutEnlargement:true}).jpeg({quality:40}).toBuffer();
-const url='data:image/jpeg;base64,'+buf.toString('base64');records.push({name:f,origKb:osz,compKb:buf.length,dataUrl:url});
-data_urls.push(url);compTotal+=buf.length;console.log(`  [${i+1}/${imgs.length}] ${f} ${(osz/1024).toFixed(0)}KB→${(buf.length/1024).toFixed(0)}KB`)}
-catch(e){records.push({name:f,origKb:osz,compKb:0,dataUrl:null,error:e.message});console.log(`  [${i+1}/${imgs.length}] ${f} ❌ ${e.message}`)}}
-console.timeEnd('压缩');
-console.log(`payload: ${(compTotal/1024).toFixed(0)}KB`);
-console.time('MCP审核');
-const H={'Content-Type':'application/json','Accept':'application/json, text/event-stream','Authorization':`Bearer ${API_KEY}`};
+if(osz>maxSize){records.push({name:f,origKb:osz,compKb:0,compUrl:null,ratio:null,error:'超过5MB限制'});skip++;console.log(`  [${i+1}/${imgs.length}] ${f} ${(osz/1024).toFixed(0)}KB ⚠️ 超过5MB跳过`);continue}
+const buf=fs.readFileSync(fp);const ext=path.extname(f).toLowerCase().slice(1);
+const mime=ext==='png'?'image/png':ext==='webp'?'image/webp':'image/jpeg';
+records.push({name:f,origKb:osz,compKb:0,compUrl:null,ratio:null,dataUrl:'data:'+mime+';base64,'+buf.toString('base64')});}
+console.log(`可压缩: ${records.length-skip} 张, 跳过: ${skip} 张`);
+console.time('压缩');
+const H={'Content-Type':'application/json','Accept':'application/json, text/event-stream'};
 const r1=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'1',method:'initialize',params:{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'cc',version:'1'}}})});
-const sid=r1.headers.get('Mcp-Session-Id');H['Mcp-Session-Id']=sid;console.log(`MCP: init→${sid}`);
-await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})});console.log('MCP: notified→202');
-let items=[];
-if(data_urls.length>0){const r3=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_img_audit',arguments:{files:data_urls,apiKey:API_KEY}}})});
-const raw=await r3.json();const inner=JSON.parse(raw.result.content[0].text);items=inner.items}
-console.timeEnd('MCP审核');
-let itemIdx=0,pass=0,block=0,fail=0;
-console.log('\n'+'='.repeat(85));console.log(`${'文件'.padEnd(50)} ${'原始'.padStart(6)} ${'结果'.padStart(6)} ${'引擎'.padStart(6)} 说明`);console.log('-'.repeat(85));
-for(const r of records){const oszS=(r.origKb/1024).toFixed(0)+'KB';
-if(r.dataUrl){const item=items[itemIdx++],safe=item.safe,src=item.source||'-';const ec=item.errcode,em=item.errmsg||item.error||'';let st;
-if(em==='invalid api key'||em==='未配置 API Key'){st='⚠️ 错误';fail++}else if(safe===true){st='✅ 通过';pass++}else if(safe===false){st='⛔ 违规';block++}else{st='❌ 失败';fail++}
-console.log(`${r.name.padEnd(50)} ${oszS.padStart(6)} ${st.padStart(6)} ${src.padStart(6)} ${em.padStart(8)}`)}
-else{console.log(`${r.name.padEnd(50)} ${oszS.padStart(6)} ${'❌ 失败'.padStart(6)} ${'—'.padStart(6)} 压缩失败`);fail++}}
-const total=records.length;console.log(`\n📊 ${total} 张 | ✅ ${pass} 通过 | ⛔ ${block} 违规 | ⚠️ ${fail} 错误/失败 | v${items[0]?.auditVersion||'?'}`);
+H['Mcp-Session-Id']=r1.headers.get('Mcp-Session-Id');console.log('MCP: init');
+await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})});console.log('MCP: notified');
+// 并发池：始终保持 LIMIT 个请求在飞，完成一个补一个
+	const LIMIT=5;
+	let totalSaved=0,pass=0,fail=0,done=0;
+	const pending=records.filter(r=>!r.error);
+	
+	async function compressOne(r,idx){
+	  try{
+	    const r3=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})});
+	    const raw=await r3.json();
+	    if(!raw.result){r.error='MCP: '+(raw.error?.message||'unknown');fail++}
+	    else{
+	      const inner=JSON.parse(raw.result.content[0].text);
+	      if(inner.error){r.error=inner.code+': '+inner.error;fail++}
+	      else{const it=inner.items[0];
+	        if(it.error){r.error=it.error;fail++}
+	        else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${idx+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
+	      }
+	    }
+	  }catch(e){r.error=e.message;fail++}
+	  done++;
+	}
+	
+	// 滑动窗口：始终保持 LIMIT 个并发
+	let i=0;
+	const running=new Set();
+	while(i<pending.length||running.size>0){
+	  while(running.size<LIMIT&&i<pending.length){
+	    const p=compressOne(pending[i],i).then(()=>running.delete(p));
+	    running.add(p);i++;
+	  }
+	  if(running.size>0) await Promise.race(running);
+	}console.timeEnd('压缩');
+console.log('\n'+'='.repeat(100));
+console.log(`${'文件'.padEnd(40)} ${'原始'.padStart(8)} ${'压缩后'.padStart(8)} ${'压缩率'.padStart(8)} ${'结果'.padStart(6)}`);
+console.log('-'.repeat(100));
+for(const r of records){const oszS=(r.origKb/1024).toFixed(1)+'KB';
+if(r.compUrl){const cszS=(r.compKb).toFixed(1)+'KB';console.log(`${r.name.padEnd(40)} ${oszS.padStart(8)} ${cszS.padStart(8)} ${(r.ratio||'?').padStart(8)} ${'✅'.padStart(6)} ${r.compUrl}`)}
+else{console.log(`${r.name.padEnd(40)} ${oszS.padStart(8)} ${'—'.padStart(8)} ${'—'.padStart(8)} ${'❌'.padStart(6)}`)}}
+console.log(`\n📊 ${records.length} 张 | ✅ ${pass} 成功 | ❌ ${fail} 失败 | 共节省 ${(totalSaved/1024).toFixed(0)}KB`);
+
 })();
-AUDITEOF
+COMPRESSEOF
 ```
 
 ### 建议
 
-- ✅ **通过**：可正常使用
-- ⛔ **违规**：建议删除或人工复核
+- ✅ **成功**：压缩后的 CDN URL 可直接使用
+- ⚠️ **超 5MB**：文件超过服务端限制，需手动处理
 - ❌ **失败**：重试一次
 
 ---
@@ -114,12 +144,10 @@ AUDITEOF
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `safe` | `boolean` | `true`=通过，`false`=违规 |
-| `source` | `string` | 审核引擎（`wechat` / `api`） |
-| `errcode` | `number` | 错误码，`0`=正常 |
-| `errmsg` | `string` | 错误信息，`"ok"`=正常 |
-| `message` | `string` | 审核结果描述 |
-| `auditVersion` | `string` | 服务版本号 |
-| `summary` | `object` | `{total, pass, block, error}` |
+| `originalSize` | `number` | 原始大小（bytes） |
+| `compressedSize` | `number` | 压缩后大小（bytes） |
+| `ratio` | `string` | 压缩率，如 `"71.5%"` |
+| `compressedUrl` | `string` | CDN 地址 |
 
 ## 常见错误速查
 
@@ -131,7 +159,7 @@ AUDITEOF
 | `"invalid api key"` | API Key 错误或过期（errcode=-1） | 检查 `.mcp.json` 中的 Key 是否正确 |
 | `"未配置 API Key"` | 没传 `apiKey` | **必须传**，工具定义说可选是误导 |
 | `413 Payload Too Large` | payload 超限 | 压缩后通常 < 200KB，不触发；未压缩大图需分批 |
-| `Cannot find module 'sharp'` | 未全局安装或缺少 NODE_PATH | `NODE_PATH=$(npm root -g) node ...` |
+| 文件超过 5MB 被跳过 | 服务端限制 | 提示用户手动处理 |
 
 ## 禁止事项
 
@@ -140,5 +168,5 @@ AUDITEOF
 - ❌ 不要省略 `apiKey` 参数
 - ❌ 不要省略 `notifications/initialized` 步骤
 - ❌ 不要写任何临时文件（heredoc 直接喂 stdin，纯内存执行）
-- ❌ 不要把流程拆成多次 Bash 调用（一次 `node << 'AUDITEOF'` 搞定）
+- ❌ 不要把流程拆成多次 Bash 调用（一次 `node << 'COMPRESSEOF'` 搞定）
 - ❌ 不要使用反斜杠路径（`d:\path`），bash heredoc 会被转义，一律用正斜杠（`d:/path`）
