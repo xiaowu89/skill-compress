@@ -1,132 +1,148 @@
 ---
 name: image-compress
-description: Automated image compression workflow using server-side smart compression. Supports local paths, folders, and URLs with CDN output and compression ratio reporting. Use when compressing images, reducing file size, or optimizing photos.
+description: 自动化图片压缩工作流，通过服务端智能压缩实现图片优化。支持本地路径、文件夹和远程 URL，返回 CDN 地址和压缩率。Use when compressing images, reducing file size, or optimizing photos.
 license: MIT
-compatibility: Requires nodejs and nx-mcp-server with NX_API_KEY configured
+compatibility: Requires Node.js >= 18 and nx-mcp-server with NX_API_KEY configured
 metadata:
   author: xiaowu89
-  version: 1.0.2
-  tags: image-compress, compression, optimization, media
+  version: 1.1.0
+  tags:
+    - image-compress
+    - compression
+    - optimization
+    - cdn
 ---
 
-# Image Compression
+# 图片压缩
 
-Compress images using the nx-mcp-server remote compression service.
+通过 nx-mcp-server 远程压缩服务对图片进行智能压缩。
 
-## ⚠️ Decision Flow (READ FIRST)
+## 配置
 
-```
-MCP tool available?
-  ├─ YES → Use it. Done.
-  └─ NO  → Check .mcp.json exists with nx-mcp-compress?
-              ├─ NO  → Guide user to create .mcp.json (see Setup below).
-              │         TELL USER TO RESTART Claude Code. STOP HERE.
-              │         Do NOT proceed to curl. Wait for user to restart.
-              └─ YES → User confirms they restarted but MCP still unavailable?
-                        ├─ NO  → Tell user to restart first. STOP.
-                        └─ YES → Use curl fallback (see bottom of this file).
-```
-
-**Never skip "restart" step. Never use curl before user confirms they restarted.**
-
-## Compression Workflow
-
-### Step 1: Collect Images
-
-- **Folder path**: use `ls` to list all `png/jpg/jpeg/webp/bmp/tga` files
-- **Single file path**: convert to dataUrl
-- **Remote URL**: pass as-is
-
-Report total count to user. Skip files > 5MB: "File too large."
-
-### Step 2: Compress (use MCP)
-
-Call `nx-mcp-compress` → `nx_compress`.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `urls` | `string[]` | One of urls/files | — | HTTP URL or dataUrl |
-| `files` | `string[]` | One of urls/files | — | dataUrl format |
-| `quality` | `integer` | No | `90` | 1-100 |
-| `output` | `string` | No | — | `"overwrite"` or directory path |
-
-### Step 3: Summarize
-
-| File | Original | Compressed | Ratio | CDN URL |
-|------|----------|------------|-------|---------|
-
----
-
-## Setup (.mcp.json)
-
-If MCP tool is unavailable and `.mcp.json` doesn't exist with `nx-mcp-compress`, create this file in the project directory:
+在项目根目录创建 `.mcp.json`：
 
 ```json
 {
   "mcpServers": {
     "nx-mcp-compress": {
-      "type": "streamable_http",
-      "url": "https://mcp.api-inference.modelscope.net/da691d14ea0d46/mcp",
+      "type": "url",
+      "url": "https://mcp.api-inference.modelscope.net/4378d43d3e7d4c/mcp",
       "env": {
-        "NX_API_KEY": "your-api-key-here"
+        "NX_API_KEY": "你的 API Key"
       }
     }
   }
 }
 ```
 
-Then **tell the user: "Please restart Claude Code to load the MCP server, then try again."** Stop here. Do not attempt curl.
+查找顺序：项目根目录 → 用户家目录。提取 `url` → `MCP_URL`，`env.NX_API_KEY` → `API_KEY`。
 
-**No API Key?** Contact WeChat `zhjian_2026`.
+Skill 直连 MCP 端点，**无需重启 Claude Code**。
+
+> **没有 API Key？** 联系微信 `zhjian_2026` 获取。
+
+## 压缩流程
+
+### 步骤 1：检查配置
+
+```bash
+cat .mcp.json 2>/dev/null || cat ~/.mcp.json 2>/dev/null
+```
+
+- 找到 → 记录 `url` 和 `NX_API_KEY`，继续步骤 2
+- 找不到 → 询问用户是否已有 API Key：
+  - **有 Key**：帮用户创建 `~/.mcp.json`，全局和项目安装都通用
+  - **没有 Key**：告知联系微信 `zhjian_2026` 获取
+
+> ⚠️ 配置缺失时不要继续后续步骤。
+
+### 步骤 2：执行压缩（一次 Bash 调用，纯内存，零文件）
+
+替换 `PIC_DIR`、`MCP_URL`、`API_KEY`、`QUALITY` 后，heredoc 直接通过 stdin 喂给 node：
+
+```bash
+NODE_PATH=$(npm root -g) node << 'COMPRESSEOF'
+const fs=require('fs'),path=require('path');
+const PIC_DIR='<目标图片目录绝对路径>';
+const MCP_URL='<从.mcp.json读取的url>';
+const API_KEY='<从.mcp.json读取的NX_API_KEY>';
+const QUALITY=90;
+(async()=>{
+const exts=['.png','.jpg','.jpeg','.webp','.bmp','.tga'];
+const imgs=fs.readdirSync(PIC_DIR).filter(f=>exts.includes(path.extname(f).toLowerCase())).sort();
+const origTotal=imgs.reduce((s,f)=>s+fs.statSync(path.join(PIC_DIR,f)).size,0);
+console.log(`共 ${imgs.length} 张，总 ${(origTotal/1024).toFixed(0)}KB`);
+const maxSize=5*1024*1024;
+const records=[];let skip=0;
+for(let i=0;i<imgs.length;i++){const f=imgs[i],fp=path.join(PIC_DIR,f),osz=fs.statSync(fp).size;
+if(osz>maxSize){records.push({name:f,origKb:osz,compKb:0,compUrl:null,ratio:null,error:'超过5MB限制'});skip++;console.log(`  [${i+1}/${imgs.length}] ${f} ${(osz/1024).toFixed(0)}KB ⚠️ 超过5MB跳过`);continue}
+const buf=fs.readFileSync(fp);const ext=path.extname(f).toLowerCase().slice(1);
+const mime=ext==='png'?'image/png':ext==='webp'?'image/webp':'image/jpeg';
+records.push({name:f,origKb:osz,compKb:0,compUrl:null,ratio:null,dataUrl:'data:'+mime+';base64,'+buf.toString('base64')});}
+console.log(`可压缩: ${records.length-skip} 张, 跳过: ${skip} 张`);
+console.time('压缩');
+const H={'Content-Type':'application/json','Accept':'application/json, text/event-stream'};
+const r1=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'1',method:'initialize',params:{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'cc',version:'1'}}})});
+H['Mcp-Session-Id']=r1.headers.get('Mcp-Session-Id');console.log('MCP: init');
+await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})});console.log('MCP: notified');
+// 逐张发送，避免单次 payload 超过网关限制（~5MB）
+let totalSaved=0,pass=0,fail=0;
+for(let i=0;i<records.length;i++){const r=records[i];
+if(r.error){fail++;continue}
+const r3=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})});
+const inner=JSON.parse((await r3.json()).result.content[0].text);
+if(inner.error){r.error=inner.code;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${inner.code}: ${inner.error}`);continue}
+const it=inner.items[0];
+if(it.error){r.error=it.error;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${it.error}`);}
+else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
+}
+console.timeEnd('压缩');
+console.log('\n'+'='.repeat(100));
+console.log(`${'文件'.padEnd(40)} ${'原始'.padStart(8)} ${'压缩后'.padStart(8)} ${'压缩率'.padStart(8)} ${'结果'.padStart(6)}`);
+console.log('-'.repeat(100));
+for(const r of records){const oszS=(r.origKb/1024).toFixed(1)+'KB';
+if(r.compUrl){const cszS=(r.compKb).toFixed(1)+'KB';console.log(`${r.name.padEnd(40)} ${oszS.padStart(8)} ${cszS.padStart(8)} ${(r.ratio||'?').padStart(8)} ${'✅'.padStart(6)}`)}
+else{console.log(`${r.name.padEnd(40)} ${oszS.padStart(8)} ${'—'.padStart(8)} ${'—'.padStart(8)} ${'❌'.padStart(6)}`)}}
+console.log(`\n📊 ${records.length} 张 | ✅ ${pass} 成功 | ❌ ${fail} 失败 | 共节省 ${(totalSaved/1024).toFixed(0)}KB`);
+})();
+COMPRESSEOF
+```
+
+压缩参数：`quality` 默认 90（1-100），无需本地 sharp，直传服务端压缩。
+
+### 建议
+
+- ✅ **成功**：压缩后的 CDN URL 可直接使用
+- ⚠️ **超 5MB**：文件超过服务端限制，需手动处理
+- ❌ **失败**：重试一次
 
 ---
 
-## Curl Fallback
+## 返回字段速查
 
-**Only use this after ALL of the following are true:**
-1. .mcp.json exists with correct config
-2. User has restarted Claude Code
-3. MCP tool is still unavailable after restart
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `originalSize` | `number` | 原始大小（bytes） |
+| `compressedSize` | `number` | 压缩后大小（bytes） |
+| `ratio` | `string` | 压缩率，如 `"71.5%"` |
+| `compressedUrl` | `string` | CDN 地址 |
 
-### Convert local files to base64 (use Python, not bash)
+## 常见错误速查
 
-Bash has command-line length limits on Windows. Use Python:
+| 错误现象 | 原因 | 正确做法 |
+|------|------|------|
+| `MISSING_API_KEY` | 没传 `apiKey` | 必须传 |
+| `API_AUTH_FAILED` | API Key 无效 | 检查 `.mcp.json` 中的 Key |
+| `-32602 Invalid request parameters` | 未发送 `notifications/initialized` | 必须三步：init → notified → call |
+| `406 Not Acceptable` | 缺少 `Accept` 头 | 同时声明 `application/json` 和 `text/event-stream` |
+| 文件超过 5MB 被跳过 | 服务端限制 | 提示用户手动处理 |
 
-```bash
-python -c "import base64;b64=base64.b64encode(open('FILE_PATH','rb').read()).decode();print(b64)"
-```
+## 禁止事项
 
-Prepend `data:image/<mime>;base64,` (mime: `jpeg` for jpg, else use extension).
-
-### MCP via curl — 3 steps, exact order, one session
-
-```bash
-NX_KEY="<from .mcp.json env.NX_API_KEY>"
-MCP="https://mcp.api-inference.modelscope.net/da691d14ea0d46/mcp"
-FILES='["data:image/jpeg;base64,..."]'
-
-# 1. Initialize, capture session ID
-SID=$(curl -s -i -X POST "$MCP" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"claude-code","version":"1.0"}}}' | grep -i "mcp-session-id" | tr -d '\r' | awk -F': ' '{print $2}')
-
-# 2. Send initialized (REQUIRED — skip = "Invalid request parameters")
-curl -s -X POST "$MCP" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "Mcp-Session-Id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-
-# 3. Compress — apiKey in arguments, NOT headers (headers = MISSING_API_KEY)
-curl -s -X POST "$MCP" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "Mcp-Session-Id: $SID" -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"nx_compress\",\"arguments\":{\"files\":$FILES,\"quality\":90,\"apiKey\":\"$NX_KEY\"}}}"
-```
-
----
-
-## Response Fields
-
-- `originalSize` / `compressedSize` — bytes
-- `ratio` — e.g. "87.4%"
-- `compressedUrl` — CDN URL
-
-## Error Reference
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `MISSING_API_KEY` | apiKey in headers instead of arguments | Put apiKey inside `arguments` object |
-| `Invalid request parameters` | Skipped step 2 (initialized notification) | Run step 2 before step 3 |
-| MCP tool not found | .mcp.json missing or not restarted | Create config → restart → retry |
+- ❌ 不要本地压缩（服务端智能压缩，本地 sharp 多余）
+- ❌ 不要传 `output` 参数（不存在）
+- ❌ 不要省略 `apiKey` 参数
+- ❌ 不要省略 `notifications/initialized` 步骤
+- ❌ 不要写任何临时文件（heredoc 直接 stdin，纯内存执行）
+- ❌ 不要把流程拆成多次 Bash 调用（一次 `node << 'COMPRESSEOF'` 搞定）
+- ❌ 不要使用反斜杠路径，一律用正斜杠（`d:/path`）
