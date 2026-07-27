@@ -63,7 +63,7 @@ cat .mcp.json 2>/dev/null || cat ~/.mcp.json 2>/dev/null
 ```bash
 NODE_PATH=$(npm root -g) node << 'COMPRESSEOF'
 const fs=require('fs'),path=require('path');
-const PIC_DIR='<目标图片目录绝对路径>';
+let PIC_DIR='<目标图片目录绝对路径>';
 const SINGLE_FILE='<单张图片路径，为空则压缩整个目录>';
 const MCP_URL='<从.mcp.json读取的url>';
 const API_KEY='<从.mcp.json读取的NX_API_KEY>';
