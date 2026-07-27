@@ -104,7 +104,26 @@ await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',
 	      if(it.error){r.error=it.error;fail++;console.log(`  [${idx+1}/${imgs.length}] ${r.name} ❌ ${it.error}`)}
 	      else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${idx+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
 	    });
-	  }catch(e){batch.forEach(r=>{r.error=e.message;fail++;console.log(`  ✗ ${r.name} ❌ ${e.message}`)})}
+	  }catch(e){
+	    const msg=e.message||'';
+	    if(msg.includes('Too Large')&&batch.length>1){
+	      // payload 超限，拆半逐个重试
+	      console.log(`  批次过大，拆分重试...`);
+	      for(const r of batch){
+	        try{
+	          const sr=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})});
+	          const sraw=await sr.json();
+	          if(!sraw.result){r.error='MCP error: '+(sraw.error?.message||'unknown');fail++;continue}
+	          const sinner=JSON.parse(sraw.result.content[0].text);
+	          if(sinner.error){r.error=sinner.code+': '+sinner.error;fail++}
+	          else{const it=sinner.items[0];
+	            if(it.error){r.error=it.error;fail++}
+	            else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${records.indexOf(r)+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
+	          }
+	        }catch(e2){r.error=e2.message;fail++}
+	      }
+	    }else{batch.forEach(r=>{r.error=e.message;fail++;console.log(`  ✗ ${r.name} ❌ ${e.message}`)})}
+	  }
 	}
 console.timeEnd('压缩');
 console.log('\n'+'='.repeat(100));
