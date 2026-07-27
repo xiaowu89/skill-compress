@@ -88,21 +88,24 @@ const H={'Content-Type':'application/json','Accept':'application/json, text/even
 const r1=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'1',method:'initialize',params:{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'cc',version:'1'}}})});
 H['Mcp-Session-Id']=r1.headers.get('Mcp-Session-Id');console.log('MCP: init');
 await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})});console.log('MCP: notified');
-// 逐张发送，避免单次 payload 超过网关限制（~5MB）
-let totalSaved=0,pass=0,fail=0;
-for(let i=0;i<records.length;i++){const r=records[i];
-if(r.error){fail++;continue}
-try{
-const r3=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:[r.dataUrl],quality:QUALITY,apiKey:API_KEY}}})});
-const raw=await r3.json();
-if(!raw.result){r.error='MCP error: '+(raw.error?.message||'unknown');fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${r.error}`);continue}
-const inner=JSON.parse(raw.result.content[0].text);
-if(inner.error){r.error=inner.code+': '+inner.error;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${r.error}`);continue}
-const it=inner.items[0];
-if(it.error){r.error=it.error;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${it.error}`);}
-else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
-}catch(e){r.error=e.message;fail++;console.log(`  [${i+1}/${imgs.length}] ${r.name} ❌ ${e.message}`)}
-}
+	// 每 5 张一批并发发送
+	const BATCH=5;
+	let totalSaved=0,pass=0,fail=0;
+	const pending=records.filter(r=>!r.error);
+	for(let b=0;b<pending.length;b+=BATCH){
+	  const batch=pending.slice(b,b+BATCH);
+	  try{
+	    const r3=await fetch(MCP_URL,{method:'POST',headers:H,body:JSON.stringify({jsonrpc:'2.0',id:'3',method:'tools/call',params:{name:'nx_compress',arguments:{files:batch.map(r=>r.dataUrl),quality:QUALITY,apiKey:API_KEY}}})});
+	    const raw=await r3.json();
+	    if(!raw.result){batch.forEach(r=>{r.error='MCP error: '+(raw.error?.message||'unknown');fail++;console.log(`  ✗ ${r.name} ❌ ${r.error}`)});continue}
+	    const inner=JSON.parse(raw.result.content[0].text);
+	    if(inner.error){batch.forEach(r=>{r.error=inner.code+': '+inner.error;fail++;console.log(`  ✗ ${r.name} ❌ ${r.error}`)});continue}
+	    inner.items.forEach((it,i)=>{const r=batch[i],idx=records.indexOf(r);
+	      if(it.error){r.error=it.error;fail++;console.log(`  [${idx+1}/${imgs.length}] ${r.name} ❌ ${it.error}`)}
+	      else{r.compKb=it.compressedSize/1024;r.ratio=it.ratio;r.compUrl=it.compressedUrl;totalSaved+=it.originalSize-it.compressedSize;pass++;console.log(`  [${idx+1}/${imgs.length}] ${r.name} ${(r.origKb/1024).toFixed(0)}KB→${(r.compKb).toFixed(0)}KB (${r.ratio})`)}
+	    });
+	  }catch(e){batch.forEach(r=>{r.error=e.message;fail++;console.log(`  ✗ ${r.name} ❌ ${e.message}`)})}
+	}
 console.timeEnd('压缩');
 console.log('\n'+'='.repeat(100));
 console.log(`${'文件'.padEnd(40)} ${'原始'.padStart(8)} ${'压缩后'.padStart(8)} ${'压缩率'.padStart(8)} ${'结果'.padStart(6)}`);
@@ -160,3 +163,4 @@ curl -o <输出目录>/<文件名> "<CDN地址>"
 - ❌ 不要写任何临时文件（heredoc 直接 stdin，纯内存执行）
 - ❌ 不要把流程拆成多次 Bash 调用（一次 `node << 'COMPRESSEOF'` 搞定）
 - ❌ 不要使用反斜杠路径，一律用正斜杠（`d:/path`）
+- ⚡ 多个目录可并行处理（每个目录独立一次 Bash，互不依赖）
