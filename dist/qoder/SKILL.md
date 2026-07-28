@@ -70,10 +70,10 @@ cat .mcp.json 2>/dev/null || cat ~/.mcp.json 2>/dev/null
 ```bash
 NODE_PATH=$(npm root -g) node << 'COMPRESSEOF'
 const fs=require('fs'),path=require('path');
-let PIC_DIR='<目标图片目录绝对路径>';
-const SINGLE_FILE='<单张图片路径，为空则压缩整个目录>';
-const MCP_URL='<从.mcp.json读取的url>';
-const API_KEY='<从.mcp.json读取的NX_API_KEY>';
+let PIC_DIR='需替换为图片目录绝对路径';
+const SINGLE_FILE='留空压缩目录，填路径只压该文件';
+const MCP_URL='需替换为MCP服务URL';
+const API_KEY='需替换为API Key';
 const QUALITY=90;
 (async()=>{
 const exts=['.png','.jpg','.jpeg','.webp','.bmp','.tga'];
@@ -146,7 +146,7 @@ COMPRESSEOF
 不要重新运行压缩！压缩结果中的 CDN URL 已在控制台输出，直接用 curl 下载：
 
 ```bash
-curl -o <输出目录>/<文件名> "<CDN地址>"
+curl -o <输出目录>/<文件名> "CDN地址"
 ```
 
 - ✅ **成功**：压缩后的 CDN URL 可直接使用
