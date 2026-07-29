@@ -1,1 +1,1 @@
-{"name":"image-compress","version":"1.1.0","description":"Server-side smart image compression via MCP","author":"xiaowu89","skills":["plugins/image-compress/skills/image-compress"],"mcpServers":{"nx-mcp-compress":{"type":"url","url":"https://mcp.api-inference.modelscope.net/4378d43d3e7d4c/mcp"}}}
+{"name":"image-compress","version":"1.1.0","description":"Server-side smart image compression via MCP","author":"xiaowu89","mcpServers":{"nx-mcp-compress":{"type":"url","url":"https://mcp.api-inference.modelscope.net/4378d43d3e7d4c/mcp"}}}
