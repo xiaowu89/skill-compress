@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @version 1.2.0
 // ===== 图片压缩脚本 =====
 // 用法:
 //   node compress.js <目录路径> [--key=xxx] [--channel=xxx] [--quality=90] [--output=输出目录]
