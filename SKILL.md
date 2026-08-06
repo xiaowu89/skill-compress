@@ -1,12 +1,12 @@
 ---
 name: image-compress
-description: 对图片进行智能压缩优化。支持本地路径、文件夹和远程 URL，直传 NX API 压缩后返回 CDN 地址和压缩率。适用于用户提到图片压缩、图片优化、减小图片体积、TinyPNG、JPG/PNG/BMP/WebP/TGA 压缩的场景。
+description: 对图片进行智能压缩优化。支持本地路径、文件夹和远程 URL，直传 NX API 压缩后返回 CDN 地址和压缩率。适用于用户提到图片压缩、图片优化、减小图片体积、TinyPNG、JPG/PNG/WebP 压缩的场景。
 license: MIT
-compatibility: 需要 Node.js >= 18 + NX_API_KEY
+compatibility: 需要 Node.js >= 18
 user-invocable: true
 metadata:
   author: xiaowu89
-  version: 1.2.0
+  version: 1.3.0
   tags:
     - image-compress
     - compression
@@ -21,12 +21,10 @@ metadata:
 ## 执行规则
 
 1. 确认 Node.js >= 18 可用。
-2. **检查 Key**（严格按此顺序执行，不可跳过）：
-   - 先读当前工作目录下的 `.env`：执行 `cat .env 2>/dev/null` 查找 `NX_API_KEY=`
-   - 已配置 → 直接执行脚本
-   - 未配置 → 询问用户是否已有 Key：
-     - **有 Key**：在**当前工作目录**写入 `.env`：`echo "NX_API_KEY=用户提供的Key" >> .env`
-     - **没有 Key**：告知联系微信 `zhijian_2026` 获取，**停止流程，不执行脚本**
+2. **Key 处理**（不强制检查，有没有都执行）：
+   - 脚本自动查找 `.env`：从当前工作目录逐级向上爬到项目根，最后兜底用户主目录 `~/.env`，就近优先
+   - 找到 `NX_API_KEY=` 则自动使用；没有 Key 不询问、不阻止，直接执行脚本，认证由 API 判定
+   - 若用户主动提供 Key → 在**当前工作目录**写入 `.env`：`echo "NX_API_KEY=用户提供的Key" >> .env`
    - `.env` 写入位置是项目根目录（用户启动 Claude Code 的目录），不是 skill 安装目录
 3. 路径规则：
    - 用户指定目录 → 传目录路径，脚本自动扫描
@@ -44,7 +42,7 @@ metadata:
 
 **场景 1：压缩整个目录**
 > 用户："/image-compress 帮我压缩 E:\product\images 目录"
-> Skill：检查 Key → 执行 `node scripts/compress.js E:/product/images` → 输出压缩表格
+> Skill：执行 `node scripts/compress.js E:/product/images` → 输出压缩表格
 
 **场景 2：单张压缩并保存**
 > 用户："压缩 E:\photo.jpg 保存到 D:\output"
@@ -58,9 +56,9 @@ metadata:
 > 用户："用 60 的质量压缩 E:\photo.jpg"
 > Skill：识别到质量要求 → 执行 `node scripts/compress.js E:/photo.jpg --quality=60`。用户未明确指定质量时，主动询问是否需要调整（默认 90）。
 
-**场景 5：首次使用（无 Key）**
+**场景 5：无 Key**
 > 用户："/image-compress 压缩 D:\素材"
-> Skill：检测 `.env` 无 Key → 询问用户 → 用户提供 Key → 写入 `.env` → 继续压缩
+> Skill：检测 `.env` 无 Key → 直接执行脚本 → 若 API 返回认证错误，如实展示给用户
 
 ## 命令
 
@@ -123,6 +121,7 @@ curl --http1.1 -o "<绝对路径>/<文件名>" "<CDN地址>"
 | 错误 | 原因 | 处理 |
 |------|------|------|
 | `余额不足` | 账户余额耗尽 | 告知用户联系微信 `zhijian_2026` 充值 |
+| `设备体验次数已用完` | 当前设备免费体验次数已耗尽 | 完整展示 API 返回的提示原文，如"设备体验次数已用完,请联系微:zhijian_2026" |
 | `invalid api key` | Key 错误或过期 | 重新设置 `NX_API_KEY` |
 | `超过30MB限制` | 单文件 > 30MB | 跳过并提示用户手动处理 |
 | `网络请求失败` | 网络不通或代理问题 | 检查网络后重试 |
