@@ -1,6 +1,6 @@
 # image-compress — 图片压缩 Skill
 
-直连 NX API 对图片进行智能压缩，返回 CDN 地址和压缩率。
+直连 NX API 对图片进行智能压缩，返回 CDN 地址和压缩率。支持免费体验。
 
 ## 快速安装
 
