@@ -74,7 +74,7 @@ let urlList=[];
 let quality=90;
 let outputDir='';
 for(const arg of args){
-  if(arg.startsWith('--key=')){apiKey=arg.slice(6)}
+  if(arg.startsWith('--key=')){apiKey=arg.slice(6);process.stderr.write('WARNING: passing API key via --key= exposes it in process listings. Use NX_API_KEY env variable or a .env file instead.\n')}
   else if(arg.startsWith('--channel=')){channel=arg.slice(10)}
   else if(arg.startsWith('--client=')){clientId=arg.slice(9)}
   else if(arg.startsWith('--urls=')){urlList=arg.slice(7).split(',').filter(Boolean)}
@@ -114,7 +114,7 @@ async function main(){
       if(!exts.includes(ext)){console.error(`不支持的文件格式: ${ext}`);process.exit(1);}
       imgs=[SINGLE_FILE];
     }else{
-      imgs=fs.readdirSync(PIC_DIR).filter(f=>exts.includes(path.extname(f).toLowerCase())).sort();
+      imgs=fs.readdirSync(PIC_DIR).map(f=>path.basename(f)).filter(f=>exts.includes(path.extname(f).toLowerCase())).sort();
     }
 
     const origTotal=imgs.reduce((s,f)=>s+fs.statSync(path.join(PIC_DIR,f)).size,0);
@@ -242,7 +242,7 @@ async function main(){
     const dlRecords=[...localRecords,...urlRecords];
     for(const r of dlRecords){
       if(!r.compUrl) continue;
-      const outName=r.name||r.compUrl.split('/').pop().split('?')[0];
+      const outName=path.basename(r.name||r.compUrl.split('/').pop().split('?')[0]);
       const outPath=path.join(outputDir,outName);
       try{
         const dl=await fetch(r.compUrl);
