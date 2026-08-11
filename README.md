@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 
-直连 NX API 对图片进行智能压缩，返回 CDN 地址和压缩率。支持免费体验。
+一款专业的 **图片压缩 / 批量图片压缩** Skill：直连 NX API 对图片进行智能压缩，返回 CDN 地址和压缩率。支持免费体验。
 
 ## 快速安装
 
@@ -38,13 +38,15 @@ NX_API_KEY=你的API_Key
 
 ## 使用
 
+在 Claude Code 中输入 `/image-compress`，然后提供图片路径，即可开始图片压缩：
+
 ```
 /image-compress 压缩 E:/images/                    # 批量压缩文件夹
 /image-compress 压缩 E:/images/photo.png           # 单张压缩
 /image-compress --urls=https://cdn.xxx/1.jpg       # URL 压缩
 ```
 
-## 压缩流程
+## 图片压缩流程
 
 | 步骤 | 说明 |
 |------|------|
