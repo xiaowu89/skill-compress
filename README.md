@@ -1,5 +1,11 @@
 # image-compress — 图片压缩 Skill
 
+> **Claude Code skill for image compression** — smart image optimization via NX API, returns CDN URLs with compression ratios.
+
+![GitHub stars](https://img.shields.io/github/stars/xiaowu89/skill-compress)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Node](https://img.shields.io/badge/node-%3E%3D18-green)
+
 直连 NX API 对图片进行智能压缩，返回 CDN 地址和压缩率。支持免费体验。
 
 ## 快速安装
@@ -55,3 +61,8 @@ NX_API_KEY=你的API_Key
 ## 许可证
 
 MIT
+
+## 相关 Skill
+
+- [image-audit](https://github.com/xiaowu89/skill-function) — AI 图片内容审核，鉴黄/政治/暴恐识别
+- [nx-matting](https://github.com/xiaowu89/skill-matting) — 本地 BiRefNet 图片/视频抠图，无需 Python
